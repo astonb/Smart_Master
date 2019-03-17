@@ -1,0 +1,4 @@
+---- tcpip_adapter_dhcpc_stop_api Matches (3 in 1 files) ----
+tcpip_adapter_lwip.c (F:\msys32\home\40806\esp\esp-idf\components\tcpip_adapter) line 62 : static esp_err_t tcpip_adapter_dhcpc_stop_api(tcpip_adapter_api_msg_t * msg);
+tcpip_adapter_dhcpc_stop in tcpip_adapter_lwip.c (F:\msys32\home\40806\esp\esp-idf\components\tcpip_adapter) :     TCPIP_ADAPTER_IPC_CALL(tcpip_if, 0, 0, 0, tcpip_adapter_dhcpc_stop_api);
+tcpip_adapter_lwip.c (F:\msys32\home\40806\esp\esp-idf\components\tcpip_adapter) line 1083 : static esp_err_t tcpip_adapter_dhcpc_stop_api(tcpip_adapter_api_msg_t * msg)

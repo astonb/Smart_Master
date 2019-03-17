@@ -1,0 +1,66 @@
+In archive F:/msys32/home/40806/esp/Smart_Master/build/wifi_config/libwifi_config.a:
+
+wifi_config.o:     file format elf32-xtensa-le
+
+Sections:
+Idx Name          Size      VMA       LMA       File off  Algn
+  0 .literal.Wifi_EventHandler 0000014c  00000000  00000000  00000034  2**2
+                  CONTENTS, ALLOC, LOAD, RELOC, READONLY, CODE
+  1 .literal.Wifi_SoftAp_Start 0000007c  00000000  00000000  00000180  2**2
+                  CONTENTS, ALLOC, LOAD, RELOC, READONLY, CODE
+  2 .literal.Master_Wifi_Init 0000006c  00000000  00000000  000001fc  2**2
+                  CONTENTS, ALLOC, LOAD, RELOC, READONLY, CODE
+  3 .text         00000000  00000000  00000000  00000268  2**0
+                  CONTENTS, ALLOC, LOAD, READONLY, CODE
+  4 .data         00000000  00000000  00000000  00000268  2**0
+                  CONTENTS, ALLOC, LOAD, DATA
+  5 .bss          00000000  00000000  00000000  00000268  2**0
+                  ALLOC
+  6 .rodata.str1.4 000005d7  00000000  00000000  00000268  2**2
+                  CONTENTS, ALLOC, LOAD, READONLY, DATA
+  7 .text.Wifi_EventHandler 00000352  00000000  00000000  00000840  2**2
+                  CONTENTS, ALLOC, LOAD, RELOC, READONLY, CODE
+  8 .rodata.Wifi_EventHandler 00000064  00000000  00000000  00000b94  2**2
+                  CONTENTS, ALLOC, LOAD, RELOC, READONLY, DATA
+  9 .text.Wifi_SoftAp_Start 00000146  00000000  00000000  00000bf8  2**2
+                  CONTENTS, ALLOC, LOAD, RELOC, READONLY, CODE
+ 10 .text.Master_Wifi_Init 000000f8  00000000  00000000  00000d40  2**2
+                  CONTENTS, ALLOC, LOAD, RELOC, READONLY, CODE
+ 11 .rodata.__func__$7514 00000012  00000000  00000000  00000e38  2**2
+                  CONTENTS, ALLOC, LOAD, READONLY, DATA
+ 12 .rodata.__func__$7543 00000011  00000000  00000000  00000e4c  2**2
+                  CONTENTS, ALLOC, LOAD, READONLY, DATA
+ 13 .rodata.__func__$7533 00000012  00000000  00000000  00000e60  2**2
+                  CONTENTS, ALLOC, LOAD, READONLY, DATA
+ 14 .bss.g_ReConnect_Cnt 00000001  00000000  00000000  00000e72  2**0
+                  ALLOC
+ 15 .rodata.ETH_LINKUP_BIT 00000004  00000000  00000000  00000e74  2**2
+                  CONTENTS, ALLOC, LOAD, READONLY, DATA
+ 16 .rodata.CONNECTED_BIT 00000004  00000000  00000000  00000e78  2**2
+                  CONTENTS, ALLOC, LOAD, READONLY, DATA
+ 17 .bss.xQueueConntecdWifi 00000004  00000000  00000000  00000e7c  2**2
+                  ALLOC
+ 18 .debug_frame  00000058  00000000  00000000  00000e7c  2**2
+                  CONTENTS, RELOC, READONLY, DEBUGGING
+ 19 .debug_info   0000246a  00000000  00000000  00000ed4  2**0
+                  CONTENTS, RELOC, READONLY, DEBUGGING
+ 20 .debug_abbrev 000002c8  00000000  00000000  0000333e  2**0
+                  CONTENTS, READONLY, DEBUGGING
+ 21 .debug_loc    0000021d  00000000  00000000  00003606  2**0
+                  CONTENTS, RELOC, READONLY, DEBUGGING
+ 22 .debug_aranges 00000030  00000000  00000000  00003823  2**0
+                  CONTENTS, RELOC, READONLY, DEBUGGING
+ 23 .debug_ranges 00000020  00000000  00000000  00003853  2**0
+                  CONTENTS, RELOC, READONLY, DEBUGGING
+ 24 .debug_line   0000068a  00000000  00000000  00003873  2**0
+                  CONTENTS, RELOC, READONLY, DEBUGGING
+ 25 .debug_str    0000182f  00000000  00000000  00003efd  2**0
+                  CONTENTS, READONLY, DEBUGGING
+ 26 .comment      0000003c  00000000  00000000  0000572c  2**0
+                  CONTENTS, READONLY
+ 27 .xtensa.info  00000038  00000000  00000000  00005768  2**0
+                  CONTENTS, READONLY
+ 28 .xt.lit       00000018  00000000  00000000  000057a0  2**0
+                  CONTENTS, RELOC, READONLY
+ 29 .xt.prop      00000228  00000000  00000000  000057b8  2**0
+                  CONTENTS, RELOC, READONLY
