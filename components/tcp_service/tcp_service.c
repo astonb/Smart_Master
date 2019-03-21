@@ -1,42 +1,42 @@
-#include <freertos/FreeRTOS.h>
-#include <freertos/queue.h>
-#include <freertos/semphr.h>
-#include <freertos/task.h>
-#include <freertos/FreeRTOSConfig.h>
-#include <freertos/timers.h>
-#include <freertos/event_groups.h>
+#include "freertos/FreeRTOS.h"
+#include "freertos/queue.h"
+#include "freertos/semphr.h"
+#include "freertos/task.h"
+#include "freertos/FreeRTOSConfig.h"
+#include "freertos/timers.h"
+#include "freertos/event_groups.h"
 
-#include <esp_log.h>
-#include <esp_wifi.h>
-#include <esp_event_loop.h>
-#include <esp_err.h>
+#include "esp_log.h"
+#include "esp_wifi.h"
+#include "esp_event_loop.h"
+#include "esp_err.h"
 
 #include <lwip/sockets.h>
 #include <lwip/netdb.h>
 
+#include "myOS.h"
 #include <string.h>
 #include "tcp_service.h"
 
+
 static const char *TAG = "[TCP]";
 
+client_info_table_t clie_info_table;
 
-QueueHandle_t tcp_msg_send_queue;
-QueueHandle_t tcp_msg_recv_queue;
+os_queue_t tcp_msg_send_queue;
+os_queue_t tcp_msg_recv_queue;
 
 
-int fdArray[sizeof(fd_set)*TCP_SERVER_ACCEPT_MAX];//第三方数组
+int fdArray[WIFI_TCP_SERVER_ACCEPT_MAX];//sizeof(fd_set)*n
 
-tcp_packet_t *tcp_packet_creat(int fd, const char *content_data, int content_size)
+tcp_packet_t *tcp_packet_creat(const char *content_data, int content_size)
 {
 	tcp_packet_t *tcp_packet = NULL;
 
-	if(fd < 0)
-		return NULL;
 	
 	if(content_size > TCP_RECV_BUF_SIZE)
 		return NULL;
-	
-	tcp_packet->fd = fd;
+
 	tcp_packet = (tcp_packet_t *)malloc(sizeof(tcp_packet_t) + content_size + 1);
 	if(tcp_packet != NULL)
 	{
@@ -51,21 +51,24 @@ tcp_packet_t *tcp_packet_creat(int fd, const char *content_data, int content_siz
 }
 
 
-void tcp_packet_release(tcp_packet_t *tcp_packet_p)
+void tcp_packet_release(tcp_packet_t **tcp_packet_p)
 {
-	if(tcp_packet_p != NULL)
-		free(tcp_packet_p);
+	if (*tcp_packet_p != NULL)
+    {
+        free(*tcp_packet_p);
+        *tcp_packet_p = NULL;
+    }
 }
 
-int tcp_lowLevel_sendData(tcp_packet_t *tcp_send_packet_p)
+int tcp_lowLevel_sendData(tcp_packet_t *tcp_send_packet_p, const int sock_fd)
 {	
 	int err = ESP_OK;
 	int bytes = 0;
 	int errcnt =0;
 	int sendLen;
 	char *sendBuf = NULL;
-	
-	sendBuf = malloc(TCP_SEND_BUF_SIZE);
+			
+	sendBuf = (char *)malloc(TCP_SEND_BUF_SIZE);
 	if(sendBuf == NULL)
 	{
 		ESP_LOGE(TAG, "sendbuf malloc failed");
@@ -78,18 +81,18 @@ int tcp_lowLevel_sendData(tcp_packet_t *tcp_send_packet_p)
 	
 	while(sendLen > 0)
 	{
-		bytes = send( tcp_send_packet_p->fd, sendBuf, sendLen , 0);
+		bytes = send( sock_fd, sendBuf, sendLen , 0);
 		if(bytes < 0)
 		{
 			errcnt++;
-			if(errcnt == 3)
+			if(errcnt >= 3)
 			{
-				ESP_LOGE(TAG, "DeviceStatus_Report failed");
-				close(tcp_send_packet_p->fd);
+				ESP_LOGE(TAG, "tcp_wifi_send failed");
+				close(sock_fd);
 				err = ESP_FAIL;
 				goto exit;
 			}
-			vTaskDelay(100); 
+			vTaskDelay(10); 
 		}
 		else
 		{
@@ -101,6 +104,37 @@ exit:
 	return err;
 }
 
+void tcp_client_info_save(char *ip, int clie_fd)
+{
+	int i= 0;
+	
+	if(clie_fd < 0)
+		return;
+	
+	for(i=0; i < WIFI_TCP_SERVER_ACCEPT_MAX; i++)
+	{
+		if(clie_info_table.fd[i] == 0)
+		{
+			clie_info_table.fd[i] = clie_fd;
+			memcpy(clie_info_table.ip_str[i], ip, strlen(ip));
+		}
+	}
+}
+
+int tcp_lookup_clieInfo_table(char *ip)
+{
+	int i = 0;
+	if(strchr(ip, '.') == NULL)
+		return -1;
+	
+	for(i=0; i < WIFI_TCP_SERVER_ACCEPT_MAX; i++)
+	{
+		if(strstr(clie_info_table.ip_str[i], ip))
+			return clie_info_table.fd[i];
+	}
+
+	return -1;
+}
 
 int TCP_Service_StartUp( int port )
 {   
@@ -134,14 +168,15 @@ int TCP_Service_StartUp( int port )
     return sock;
 }   
 
-static void TCP_Service_Thread(void *pvParameters)
+static void TCP_Service_Thread(os_thread_arg_t arg)
 {
 	fd_set rfds;
 	int i = 0;
-	tcp_packet_t *tcp_packet_recv_p = NULL;
-	tcp_packet_t *tcp_packet_send_p = NULL;
+	int ret = ESP_OK;
+	tcp_packet_t *wifi_packet_recv_p = NULL;
+	tcp_packet_t *wifi_packet_send_p = NULL;
 	
-    int listen_sock = TCP_Service_StartUp(TCP_SERVER_PORT);
+    int listen_sock = TCP_Service_StartUp(WIFI_TCP_SERVER_PORT);
 	if(listen_sock < 0)
 	{
 		ESP_LOGI(TAG, "creat socket failed");
@@ -176,113 +211,118 @@ static void TCP_Service_Thread(void *pvParameters)
             }
         }
 
-       struct timeval timeout = {TCP_SELECT_TIMEVAL_SEC, TCP_SELECT_TIMEVAL_uSEC};
+       struct timeval timeout = {WIFI_TCP_SELECT_TIMEVAL_SEC, WIFI_TCP_SELECT_TIMEVAL_uSEC};
 
        switch( select(max_fd+1,&rfds,NULL,NULL,&timeout) )// 表示只监视该文件描述符的读事件
        {
-           case 0://timeout
-               ESP_LOGI(TAG, "select timeout...");
+      		case 0:
+		   //	ESP_LOGI(TAG, "select timeout...");
+				break;
+           	case -1:
+               ESP_LOGE(TAG, "select fail...");
 			   break;
-           case -1:// failed
-               ESP_LOGI(TAG, "select fail...");
-			   break;
-           default: //successful
-           {
-               // 6. 根据数组中记录的所关心的文件描述符集先判断哪个文件描述符就绪
-               //    如果是监听文件描述符，则调用accept接受新连接
-               //   如果是普通文件描述符，则调用read读取数据
-               for(i = 0 ;i < num; i++ )
-	           {
-	               if( fdArray[i] == -1 )
-	               {
-	                   continue;
-	               }
-	               if( fdArray[i] == listen_sock && FD_ISSET( fdArray[i],&rfds ) )
-	               {
-	                   // 1. 如果监听套接字上读就绪,此时提供接受连接服务
-	                   struct sockaddr_in client;
-	                   socklen_t len = sizeof(client);
-	                   int new_sock = accept(listen_sock,(struct sockaddr *)&client,&len);
-	                   if(new_sock < 0)
-	                   {
-	                       ESP_LOGE(TAG, "accept fail...");
-	                       continue;
-	                   }
-	                   //获得新的文件描述符之后，将该文件描述符添加进数组中，以供下一次关心该文件描述符
-	                   for(i = 0 ; i < num; i++ )
-	                   {
-	                       if( fdArray[i] == -1 )//放到数组中第一个值为-1的位置
-	                           break;
-	                   }
-	                   if( i < num )
-	                   {
-	                       fdArray[i] = new_sock;
-	                   }
-	                   else
-	                   {
-	                       close(new_sock);
-	                   }
-	                   ESP_LOGI(TAG, "get a new link!,[%s:%d]",inet_ntoa(client.sin_addr),ntohs(client.sin_port));
-	                   continue;
-	               }
+			default: //successful
+			{
+			   // 6. 根据数组中记录的所关心的文件描述符集先判断哪个文件描述符就绪
+			   //    如果是监听文件描述符，则调用accept接受新连接
+			   //   如果是普通文件描述符，则调用read读取数据
+				for(i = 0 ;i < num; i++ )
+				{
+					if( fdArray[i] == -1 )
+				   	{
+				       continue;
+				   	}
+				   	if( fdArray[i] == listen_sock && FD_ISSET( fdArray[i],&rfds ) )
+				   	{
+				       // 1. 如果监听套接字上读就绪,此时提供接受连接服务
+				  		struct sockaddr_in client;
+						socklen_t len = sizeof(client);
+						int new_sock = accept(listen_sock,(struct sockaddr *)&client,&len);
+						if(new_sock < 0)
+						{
+				   			ESP_LOGE(TAG, "accept fail...");
+				     		continue;
+				       	}
+				       	//获得新的文件描述符之后，将该文件描述符添加进数组中，以供下一次关心该文件描述符
+				       	for(i = 0 ; i < num; i++ )
+				       	{
+				           	if( fdArray[i] == -1 )//放到数组中第一个值为-1的位置
+				         		break;
+				       	}
+				       	if( i < num )
+				       	{
+				           	fdArray[i] = new_sock;
+				       	}
+				       	else
+				       	{
+				           	close(new_sock);
+				       	}
+				       	ESP_LOGI(TAG, "get a new link!,[%s:%d]",inet_ntoa(client.sin_addr),ntohs(client.sin_port));
+					   	if(i < num) //有效fd
+					   		tcp_client_info_save(inet_ntoa(client.sin_addr),  fdArray[i]);
+				       	continue;
+				   	}
 
-	                //2. 此时关心的是普通文件描述符
-	                //   此时提供读取数据的服务
-	                if( FD_ISSET( fdArray[i],&rfds ) )
-	                {
-	                    char recvBuf[TCP_RECV_BUF_SIZE];
-	                    ssize_t readLen = recv(fdArray[i], recvBuf, TCP_RECV_BUF_SIZE, 0);
-	                    if( readLen < 0 )
-	                    {
-	                        ESP_LOGE(TAG, "read fail...");
-	                        close(fdArray[i]);
-	                        fdArray[i] = -1;
-	                    }
-	                    else if( readLen == 0 )
-	                    {
-	                        ESP_LOGI(TAG, "client quit...");
-	                        close(fdArray[i]);
-	                        fdArray[i] = -1;
-	                    }
-	                    else
-	                    {
-	                        recvBuf[readLen] = 0;
-	                        ESP_LOGI(TAG, "client# %s", recvBuf);
-							int err = send(fdArray[i], recvBuf, readLen, 0);
-							if (err < 0) {
-	            				ESP_LOGE(TAG, "Error occured during sending: errno %d", errno);
-	            				break;
-	        				}
-	        			
-	        				/*
-							printf("client# %s\n", recvBuf);
-							tcp_packet_recv_p = tcp_packet_creat(fdArray[i], recvBuf, readLen);
-							int err = xQueueSend(tcp_msg_recv_queue, &tcp_packet_recv_p, 200);
-							if(err != pdPASS)
+				    //2. 此时关心的是普通文件描述符
+				    //   此时提供读取数据的服务
+					if( FD_ISSET( fdArray[i],&rfds ) )
+				    {
+				  		char recvBuf[TCP_RECV_BUF_SIZE];
+				        ssize_t readLen = recv(fdArray[i], recvBuf, TCP_RECV_BUF_SIZE, 0);
+				        if( readLen < 0 )
+				        {
+				            ESP_LOGE(TAG, "read fail...");
+				            close(fdArray[i]);
+				            fdArray[i] = -1;
+				        }
+				        else if( readLen == 0 )
+				        {
+				            ESP_LOGI(TAG, "client quit...");
+				            close(fdArray[i]);
+				            fdArray[i] = -1;
+				        }
+				        else
+				        {
+							recvBuf[readLen] = 0;
+							ESP_LOGI(TAG, "client[%d]# %s",fdArray[i], recvBuf);
+							wifi_packet_recv_p = tcp_packet_creat( recvBuf, readLen);
+							ret = my_rtos_push_to_queue(&tcp_msg_recv_queue, &wifi_packet_recv_p, 500);
+							if(ret != kNoErr)
 							{
-								tcp_packet_release(tcp_packet_recv_p);
-								tcp_packet_recv_p = NULL;
 								ESP_LOGE(TAG, "push to queue error");
 							}
-							*/
-	             		}
-	           		}
-	        	}
-           	}
+							wifi_packet_recv_p = NULL;
+				 		}
+					}
+				}
+			}
     		break;
        	}
-	   //处理发送队列消息  	
+	   	//处理发送队列消息 
+		while ( my_rtos_is_queue_empty(&tcp_msg_send_queue) == false )
+		{
+			ESP_LOGI(TAG, "***have_Wifi_Data_send***");
+		
+			ret = my_rtos_pop_from_queue(&tcp_msg_send_queue, &wifi_packet_send_p, 0);
+			 if (ret != kNoErr)
+                continue;
+
+			ESP_LOGI(TAG, "recv_msg[%s]",wifi_packet_send_p->content_data);
+			 //根据IP查找table得到fd
+			int clie_fd = tcp_lookup_clieInfo_table((char *)wifi_packet_send_p->content_data);
+			ret = tcp_lowLevel_sendData(wifi_packet_send_p, clie_fd);	
+			if( ret != ESP_OK)
+			{
+				ESP_LOGE(TAG, "WARING: sock_fd[%d], tcp_send_data failed", clie_fd);
+				shutdown(clie_fd, 0);
+           	 	close(clie_fd);
+			}
+			tcp_packet_release(&wifi_packet_send_p);
+		}
     }
-    vTaskDelete(NULL);
+    my_rtos_delete_thread(NULL);
 }   
 
-
-void TCP_Recv_Thread(void *pvParameters)
-{
-	(void)pvParameters;
-
-	
-}
 
 
 int TCP_Service_Init(void)
@@ -290,81 +330,32 @@ int TCP_Service_Init(void)
 	int ret = ESP_OK;
 
 	ESP_LOGI(TAG, "TCP_Service_Init");
-	
-	tcp_msg_send_queue = xQueueCreate(TCP_SEND_QUEUE_MAX, sizeof(tcp_packet_t));
 
-	tcp_msg_recv_queue = xQueueCreate(TCP_RECV_QUEUE_MAX, sizeof(tcp_packet_t));
-
-	ret = xTaskCreate(TCP_Service_Thread, "tcp_server", 20480, NULL, 5, NULL);
-	if(ret != pdPASS)
-	{
-		ESP_LOGE(TAG, "creat TCP_Service_Thread failed");
+	ret = my_rtos_init_queue(&tcp_msg_send_queue, "tcp_msg_send_queue", sizeof(tcp_packet_t), WIFI_TCP_SEND_QUEUE_MAX);
+   	if(ret != kNoErr)
+   	{
+		ESP_LOGE(TAG, "creat tcp_msg_send_queue failed");
 		goto ERROR;
 	}
-
-/*	
-	ret = xTaskCreate(TCP_Recv_Thread, "TCP_Recv_Thread", 4096, NULL, 9, &tcp_recv_threadHandle); 
-	if(ret != pdPASS)
-	{
-		ESP_LOGE(TAG, "creat TCP_Service_Thread failed");
-		goto exit;
+	
+	ret = my_rtos_init_queue(&tcp_msg_recv_queue, "tcp_msg_recv_queue", sizeof(tcp_packet_t), WIFI_TCP_RECV_QUEUE_MAX);
+   	if(ret != kNoErr)
+   	{
+		ESP_LOGE(TAG, "creat tcp_msg_recv_queue failed");
+		goto ERROR;
 	}
-
-*/
+	
+	ret = my_rtos_create_thread(OS_APP_PRIORITY, "tcp_service_Thread", TCP_Service_Thread, 20480);
+   	if(ret != kNoErr)
+   	{
+		ESP_LOGE(TAG, "creat tcp_service_thread failed");
+		goto ERROR;
+	}
 
 	return 0;
 
 ERROR:
 	return -1;
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 

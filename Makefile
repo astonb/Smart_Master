@@ -5,7 +5,8 @@
 
 PROJECT_NAME := smart_master
 
-EXTRA_COMPONENT_DIRS += ./components
+EXTRA_COMPONENT_DIRS += ./components ./main
+
 
 include $(IDF_PATH)/make/project.mk
 

@@ -1,6 +1,7 @@
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
+#include <stdlib.h>
 #include "freertos/FreeRTOS.h"
 #include "freertos/queue.h"
 #include "freertos/semphr.h"
@@ -11,12 +12,9 @@
 #include "esp_wifi.h"
 #include "esp_event_loop.h"
 #include "esp_err.h"
-#include "esp_log.h"
 #include "wifi_config.h"
+#include "smartConfig.h"
 
-//config  ssid,password
-//char master_ssid[64]="Smart-Master";
-//char master_pwd[64]="9876543210";
 
 EventGroupHandle_t wifi_eth_event_group;
 
@@ -25,6 +23,39 @@ const int CONNECTED_BIT = BIT0;
 const int ETH_LINKUP_BIT = BIT1;
 static const char *TAG = "[WIFI]";
 static uint8_t g_ReConnect_Cnt = 0;
+
+void Str_Get_IP(const char *ip_str, unsigned char *ip)
+{
+    char *p = NULL;
+    char *pTmp1 = NULL;
+    char *pTmp2;
+    int offset = 0;
+    int i = 0;
+
+    printf("ip_str[%s]", ip_str);
+
+    p = (char *)malloc(20);
+    if(p == NULL)
+            return;
+    memset(p, 0x0, 20);
+    strcpy(p, ip_str);
+    pTmp2 = p;
+
+    if(strchr(p, '.') == NULL)
+            return;
+
+    for(i = 0; i < 3; i++)
+    {
+            pTmp1 = strchr(p, '.');
+            offset = pTmp1 - p;
+            *(pTmp2+offset) = '\0';
+            *(ip+i) = atoi(pTmp2);
+            p += (offset+1);
+            pTmp2 = p;
+			
+	}
+	ip[3] = atoi(p);
+}
 
 
 //wifi事件处理
@@ -112,14 +143,13 @@ static esp_err_t Wifi_EventHandler(void *ctx, system_event_t *event)
 
 void Wifi_SoftAp_Start(char *ssid, char *password)
 {
-	uint8_t wifi_mac[6] = {0xaf, 0x19, 0xbf, 0x03, 0xcf, 0x17};
 	uint8_t get_wifi_mac[6] = {0};
     wifi_config_t wifi_config =
     {
         .ap = {
             .ssid = "",
             .ssid_len = 0,
-            .max_connection = 4,
+            .max_connection = WIFI_AP_STA_MAX,
             .channel = 12,
             .password = "",
             .authmode = WIFI_AUTH_OPEN
@@ -154,14 +184,20 @@ void Wifi_SoftAp_Start(char *ssid, char *password)
 //wifi初始化
 void Master_Wifi_Init(char *ssid, char *pwd)
 {
+	uint8_t ip[4] = {0};
+	uint8_t gw[4] = {0};
+	uint8_t netmask[4] = {0};
+	
     //初始化wifi
     tcpip_adapter_init();
     //设置AP的地址为10.10.2.1
     tcpip_adapter_dhcps_stop(TCPIP_ADAPTER_IF_AP);
     tcpip_adapter_ip_info_t ip_info;
-    IP4_ADDR(&ip_info.ip, 192, 168, 1, 30); //10.10.2.1
-    IP4_ADDR(&ip_info.gw, 192, 168, 1, 1);
-    IP4_ADDR(&ip_info.netmask, 255, 255, 255, 0);
+	
+	Str_Get_IP(WIFI_AP_IP, ip);
+    IP4_ADDR(&ip_info.ip, ip[0], ip[1], ip[2], ip[3]); //10.10.2.1
+    IP4_ADDR(&ip_info.gw, gw[0], gw[1], gw[2], gw[3]);
+    IP4_ADDR(&ip_info.netmask, netmask[0], netmask[1], netmask[2], netmask[3]);
     tcpip_adapter_set_ip_info(TCPIP_ADAPTER_IF_AP, &ip_info);
     tcpip_adapter_dhcps_start(TCPIP_ADAPTER_IF_AP);
 

@@ -16,7 +16,10 @@
 
 #include "driver/periph_ctrl.h"
 #include "eth_phy/phy_lan8720.h"
+#include "myOS.h"
 #include "lan8720.h"
+#include "tcp_service.h"
+#include "smartConfig.h"
 
 
 #define DEFAULT_ETHERNET_PHY_CONFIG phy_lan8720_default_ethernet_config
@@ -31,6 +34,7 @@ static const char *payload = "Message from smart_eth_client";
 
 extern EventGroupHandle_t wifi_eth_event_group;
 extern const int ETH_LINKUP_BIT;
+extern QueueHandle_t tcp_msg_recv_queue;
 
 /**
  * @brief gpio specific init
@@ -52,15 +56,6 @@ static void eth_gpio_config_rmii(void)
 
 
 
-static void test_thread(void *pvParameters)
-{
-	while(1)
-	{
-		ESP_LOGI(TAG, "*****Ethernet OK******");
-		vTaskDelay(1000);//10s
-	}
-}
-
 
 static void eth_tcp_client_thread(void *pvParameters)
 {
@@ -68,17 +63,18 @@ static void eth_tcp_client_thread(void *pvParameters)
 	int clie_sock = -1;
 	int ret = 0;
 	int len = 0;
-	char rx_buffer[ETH_TCP_RCVE_BUF] = {0};
+	char rx_buffer[TCP_RECV_BUF_SIZE] = {0};
 	char addr_str[128] = {0};
 	struct sockaddr_in destAddr;
+	tcp_packet_t *eth_packet_send_p = NULL;
 
 	 ESP_LOGE(TAG, "*****eth_tcp_client  Start Up*****");
 	
 Connect_Start:
 
-    destAddr.sin_addr.s_addr = inet_addr(REMOTE_ETH_SERVER_IP);
+    destAddr.sin_addr.s_addr = inet_addr(ETH_REMOTE_SERVER_IP);
     destAddr.sin_family = AF_INET;
-    destAddr.sin_port = htons(REMOTE_ETH_SERVER_PORT);
+    destAddr.sin_port = htons(ETH_REMOTE_SERVER_PORT);
 
 	inet_ntoa_r(destAddr.sin_addr, addr_str, sizeof(addr_str) - 1);
 	
@@ -119,6 +115,11 @@ Connect_Start:
 		            ESP_LOGE(TAG, "recv failed: errno %d", errno);
 		            break;
 		        }
+				else if(len == 0)
+				{
+					ESP_LOGE(TAG, "recv PC server closed: errno");
+		            break;
+				}
 		        // Data received
 		        else {
 		            rx_buffer[len] = 0; // Null-terminate whatever we received and treat like a string
@@ -127,16 +128,35 @@ Connect_Start:
 		        }
 			}
 		}
+		//处理wifi接收的数据到PC服务器
+		while ( my_rtos_is_queue_empty(&tcp_msg_recv_queue) == false )
+		{
+			ESP_LOGI(TAG, "***have_ETH_Data_send***");
+
+			ret = my_rtos_pop_from_queue(&tcp_msg_recv_queue, &eth_packet_send_p, 0);
+			if (ret != kNoErr)
+                continue;
+
+			ESP_LOGI(TAG, "eth_send[%s]", eth_packet_send_p->content_data);
+			ret = tcp_lowLevel_sendData(eth_packet_send_p, clie_sock);	
+			if( ret != ESP_OK)
+			{
+				ESP_LOGE(TAG, "WARING: tcp_send_ETH_data failed");
+				shutdown(clie_sock, 0);
+           	 	close(clie_sock);
+			}
+			tcp_packet_release(&eth_packet_send_p);
+		}
     }
 exit:
     if (clie_sock != -1) {
         ESP_LOGE(TAG, "Shutting down socket and restarting...");
         shutdown(clie_sock, 0);
         close(clie_sock);
-		vTaskDelay(1000);//10s
+		my_rtos_thread_sleep(10);//10s
 		goto Connect_Start;
     }
-	vTaskDelete(NULL);
+	my_rtos_delete_thread(NULL);
 }
 
 
@@ -144,7 +164,6 @@ exit:
 void device_ethernet_int(void)
 {
 	int ret = 0;
-	uint8_t eth_mac[6] = {0xdf, 0x20, 0xef, 0x04, 0xff, 0x18};
 	uint8_t get_eth_mac[6];
 	tcpip_adapter_ip_info_t eth_ip;
 	
@@ -177,51 +196,12 @@ void device_ethernet_int(void)
     ESP_ERROR_CHECK(esp_eth_enable()) ;
 
 	xEventGroupWaitBits(wifi_eth_event_group, ETH_LINKUP_BIT, false, true, portMAX_DELAY);
-/*
-	ret = xTaskCreate(test_thread, "test_thread", 4096, NULL, 5, NULL);
-	if(ret != pdPASS)
-	{
-		ESP_LOGE(TAG, "creat test_thread failed");
-	}
-*/
+
 	ret = xTaskCreate(eth_tcp_client_thread, "tcp_server", 8192, NULL, 5, NULL);
 	if(ret != pdPASS)
 	{
 		ESP_LOGE(TAG, "creat eth_tcp_client_thread failed");
 	}
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
